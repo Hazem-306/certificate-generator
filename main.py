@@ -340,63 +340,14 @@ def preview_and_box_editor_fragment():
 def output_settings_fragment():
     st.subheader("⚙️ Output Settings")
 
-    # Output Folder Selection with Native Browse Dialog
-    st.write("**📁 Output Directory:**")
-    col_browse, col_clear = st.columns([0.7, 0.3])
-    with col_browse:
-        if st.button("📂 Browse PC...", use_container_width=True, help="Browse and select a destination folder on your PC"):
-            picked_dir = None
-            try:
-                import tkinter as tk
-                from tkinter import filedialog
-                root = tk.Tk()
-                root.withdraw()
-                root.attributes('-topmost', True)
-                picked_dir = filedialog.askdirectory(parent=root, title="Select Output Folder")
-                root.destroy()
-            except Exception as e:
-                # Fallback to native Windows FolderBrowserDialog if Tkinter GUI encounters thread conflicts
-                try:
-                    import subprocess
-                    ps_cmd = (
-                        "Add-Type -AssemblyName System.Windows.Forms; "
-                        "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
-                        "$f.Description = 'Select Output Folder'; "
-                        "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $f.SelectedPath }"
-                    )
-                    proc = subprocess.run(
-                        ["powershell", "-NoProfile", "-Command", ps_cmd],
-                        capture_output=True,
-                        text=True,
-                        creationflags=0x08000000 if os.name == "nt" else 0  # CREATE_NO_WINDOW
-                    )
-                    picked_dir = proc.stdout.strip()
-                except Exception as ps_err:
-                    st.error(f"Could not open directory browser: {e} | {ps_err}")
-
-            if picked_dir:
-                st.session_state.output_folder = os.path.normpath(picked_dir)
-                safe_fragment_rerun()
-    with col_clear:
-        if st.button("❌ Clear", use_container_width=True):
-            st.session_state.output_folder = ""
-            safe_fragment_rerun()
-
-    st.session_state.output_folder = st.text_input(
-        "Selected Output Directory Path (Local Disk):",
-        value=st.session_state.output_folder,
-        placeholder="e.g. C:\\Certificates or click Browse PC above",
-        help="Optional: Directory on your local computer to save generated certificates directly."
-    )
-
     export_mode = st.radio(
         "Export Options:",
         options=["Single Files", "Merged File", "Compressed File"],
         index=0,
         help=(
-            "• Single Files: Each certificate in a separate PDF file (e.g. 20 names = 20 PDF files).\n"
-            "• Merged File: All certificates in the same file.\n"
-            "• Compressed File: All certificates in the same file and zipped."
+            "• Single Files: Download a ZIP containing separate PDF files for each recipient.\n"
+            "• Merged File: Download a single PDF containing all certificates.\n"
+            "• Compressed File: Download a compressed ZIP containing the merged PDF."
         )
     )
 
@@ -448,14 +399,6 @@ def output_settings_fragment():
                 f_vals.append(val)
             rows_fields_values.append(f_vals)
 
-        output_dir_disk = st.session_state.output_folder.strip()
-        if output_dir_disk:
-            try:
-                os.makedirs(output_dir_disk, exist_ok=True)
-            except Exception as e:
-                st.error(f"Invalid output directory: {e}")
-                output_dir_disk = None
-
         try:
             if export_mode == "Merged File":
                 status_text.text("Generating merged PDF document...")
@@ -476,13 +419,6 @@ def output_settings_fragment():
 
                 with open(out_path, "rb") as f:
                     pdf_data = f.read()
-
-                # Save to local disk if directory specified
-                if output_dir_disk:
-                    disk_target = os.path.join(output_dir_disk, "Certificates_Merged.pdf")
-                    with open(disk_target, "wb") as f_disk:
-                        f_disk.write(pdf_data)
-                    st.success(f"💾 Saved Merged PDF directly to disk: `{disk_target}`")
 
                 os.remove(out_path)
                 progress_bar.progress(1.0)
@@ -518,14 +454,6 @@ def output_settings_fragment():
                     zip_file.write(out_path, arcname="Certificates_Merged.pdf")
 
                 zip_data = zip_buffer.getvalue()
-
-                # Save to local disk if directory specified
-                if output_dir_disk:
-                    disk_target = os.path.join(output_dir_disk, "Certificates_Compressed.zip")
-                    with open(disk_target, "wb") as f_disk:
-                        f_disk.write(zip_data)
-                    st.success(f"💾 Saved Compressed ZIP directly to disk: `{disk_target}`")
-
                 os.remove(out_path)
                 progress_bar.progress(1.0)
                 status_text.success(f"✅ Generated {total} certificates in 1 compressed (zipped) file!")
@@ -564,11 +492,6 @@ def output_settings_fragment():
                     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                         for pdf_file, arc_name in pdf_paths:
                             zip_file.write(pdf_file, arcname=arc_name)
-
-                    if output_dir_disk:
-                        for pdf_file, arc_name in pdf_paths:
-                            shutil.copy(pdf_file, os.path.join(output_dir_disk, arc_name))
-                        st.success(f"💾 Saved {total} separate PDF files directly to disk folder: `{output_dir_disk}`")
 
                 zip_buffer.seek(0)
                 progress_bar.progress(1.0)
